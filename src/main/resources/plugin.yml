@@ -4,6 +4,7 @@ main: net.yaycraft.yunit.Yunit
 api-version: '1.21'
 description: Yaycraft Unified Network Token System
 author: Yaycraft
+softdepend: [PlaceholderAPI]
 
 commands:
   yunit:
