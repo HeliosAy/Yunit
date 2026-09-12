@@ -24,6 +24,16 @@ class ConfigManager(private val plugin: JavaPlugin) {
             maxLifetime = config.getLong("database.pool.max-lifetime", 600000)
         )
 
+        val rawRedisPassword = config.getString("redis.password")
+        val redisPassword = if (rawRedisPassword.isNullOrBlank()) null else rawRedisPassword
+
+        val redisConfig = RedisConfig(
+            enabled = config.getBoolean("redis.enabled", false),
+            host = config.getString("redis.host") ?: "localhost",
+            port = config.getInt("redis.port", 6379),
+            password = redisPassword
+        )
+
         val cacheConfig = CacheConfig(
             expireAfterWriteSeconds = config.getLong("cache.expire-after-write-seconds", 30),
             maximumSize = config.getLong("cache.maximum-size", 2000)
@@ -41,6 +51,7 @@ class ConfigManager(private val plugin: JavaPlugin) {
 
         return PluginConfig(
             database = databaseConfig,
+            redis = redisConfig,
             cache = cacheConfig,
             safety = safetyConfig,
             serverName = serverName,

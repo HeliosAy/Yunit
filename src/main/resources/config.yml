@@ -14,6 +14,14 @@ database:
     idle-timeout: 300000
     max-lifetime: 600000
 
+# Redis Ayarları
+# Eğer password kısmını boş bırakırsanız ("") şifresiz bağlanır.
+redis:
+  enabled: false
+  host: "localhost"
+  port: 6379
+  password: ""
+
 # Önbellek Ayarları
 cache:
   expire-after-write-seconds: 30

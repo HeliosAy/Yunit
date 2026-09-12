@@ -58,6 +58,10 @@
                                     <pattern>com.github.benmanes.caffeine</pattern>
                                     <shadedPattern>net.yaycraft.yunit.lib.caffeine</shadedPattern>
                                 </relocation>
+                                <relocation>
+                                    <pattern>redis.clients.jedis</pattern>
+                                    <shadedPattern>net.yaycraft.yunit.lib.jedis</shadedPattern>
+                                </relocation>
                             </relocations>
                         </configuration>
                     </execution>
@@ -124,6 +128,14 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
             <version>3.1.8</version>
+        </dependency>
+
+        <!-- Redis - Jedis -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>5.1.2</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- KotlinX Coroutines - Async operations -->

@@ -10,6 +10,7 @@ import net.yaycraft.yunit.database.IDatabaseProvider
 import net.yaycraft.yunit.model.*
 import net.yaycraft.yunit.repository.IAccountRepository
 import net.yaycraft.yunit.repository.ITransactionRepository
+import net.yaycraft.yunit.redis.RedisManager
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -20,6 +21,7 @@ class EconomyServiceImpl(
     private val accountRepo: IAccountRepository,
     private val transactionRepo: ITransactionRepository,
     private val cache: IAccountCache,
+    private val redisManager: RedisManager?,
     private val config: PluginConfig,
     private val logger: Logger
 ) : IEconomyService {
@@ -146,6 +148,7 @@ class EconomyServiceImpl(
                 ))
 
                 cache.invalidate(uuid)
+                redisManager?.publishUpdate(uuid)
                 
                 TransactionResult.Success(account.copy(balance = newBalance), txn)
             }
@@ -183,6 +186,7 @@ class EconomyServiceImpl(
                 ))
 
                 cache.invalidate(uuid)
+                redisManager?.publishUpdate(uuid)
                 TransactionResult.Success(account.copy(balance = amount), txn)
             }
         }
