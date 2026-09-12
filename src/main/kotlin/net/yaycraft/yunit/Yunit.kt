@@ -19,7 +19,6 @@ import net.yaycraft.yunit.config.ConfigManager
 import net.yaycraft.yunit.config.LangManager
 import net.yaycraft.yunit.database.HikariDatabaseProvider
 import net.yaycraft.yunit.database.SQLMigrator
-import net.yaycraft.yunit.hook.papi.YunitPlaceholderExpansion
 import net.yaycraft.yunit.listener.PlayerConnectionListener
 import net.yaycraft.yunit.repository.MySQLAccountRepository
 import net.yaycraft.yunit.repository.MySQLPendingDeliveryRepository
@@ -48,7 +47,6 @@ class Yunit : JavaPlugin() {
         try {
             dbProvider.initialize(pluginConfig.database)
         } catch (e: Exception) {
-            logger.severe("Veritabanı başlatılamadı! Eklenti kapatılıyor...")
             server.pluginManager.disablePlugin(this)
             return
         }
@@ -69,6 +67,7 @@ class Yunit : JavaPlugin() {
 
         // Cache
         val cache = CaffeineAccountCache(pluginConfig.cache)
+
 
         // Services
         val economyService = EconomyServiceImpl(
