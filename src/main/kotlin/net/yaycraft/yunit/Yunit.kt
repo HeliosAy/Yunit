@@ -7,6 +7,7 @@ import kotlinx.coroutines.cancel
 import net.yaycraft.yunit.api.YunitAPIImpl
 import net.yaycraft.yunit.api.YunitProvider
 import net.yaycraft.yunit.cache.CaffeineAccountCache
+import net.yaycraft.yunit.hook.HookManager
 import net.yaycraft.yunit.command.admin.AdminCommandManager
 import net.yaycraft.yunit.command.admin.GiveCommand
 import net.yaycraft.yunit.command.admin.TakeCommand
@@ -73,11 +74,11 @@ class Yunit : JavaPlugin() {
         val economyService = EconomyServiceImpl(
             dbProvider, accountRepo, transactionRepo, cache, pluginConfig, logger
         )
-        
+
         val purchaseService = SafePurchaseServiceImpl(
             dbProvider, accountRepo, transactionRepo, pendingRepo, cache, pluginConfig, logger
         )
-        
+
         val recoveryService = StartupRecoveryServiceImpl(
             dbProvider, accountRepo, transactionRepo, pendingRepo, cache, pluginConfig, logger
         )
@@ -86,10 +87,9 @@ class Yunit : JavaPlugin() {
         val apiImpl = YunitAPIImpl(economyService, purchaseService, dbProvider, pluginScope)
         YunitProvider.register(apiImpl)
 
-        // PlaceholderAPI (PAPI) Entegrasyonu
-        if (server.pluginManager.getPlugin("PlaceholderAPI") != null) {
-            YunitPlaceholderExpansion(economyService, pluginConfig).register()
-        }
+        // Dış Eklenti Entegrasyonları
+        val hookManager = HookManager(server, logger, economyService, pluginConfig)
+        hookManager.registerHooks()
 
         // Dinleyiciler
         server.pluginManager.registerEvents(PlayerConnectionListener(economyService, cache, pluginScope), this)
@@ -125,15 +125,15 @@ class Yunit : JavaPlugin() {
 
     override fun onDisable() {
         logger.info("Yunit kapatılıyor...")
-        
+
         // API temizle
         YunitProvider.unregister()
-        
+
         // Coroutineleri iptal et
         if (::pluginScope.isInitialized) {
             pluginScope.cancel("Plugin disabled")
         }
-        
+
         // Veritabanı bağlantılarını kapat
         if (::dbProvider.isInitialized) {
             dbProvider.shutdown()
