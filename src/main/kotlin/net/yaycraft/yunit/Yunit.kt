@@ -22,6 +22,7 @@ import net.yaycraft.yunit.listener.PlayerConnectionListener
 import net.yaycraft.yunit.repository.MySQLAccountRepository
 import net.yaycraft.yunit.repository.MySQLPendingDeliveryRepository
 import net.yaycraft.yunit.repository.MySQLTransactionRepository
+import net.yaycraft.yunit.redis.RedisManager
 import net.yaycraft.yunit.service.EconomyServiceImpl
 import net.yaycraft.yunit.service.SafePurchaseServiceImpl
 import net.yaycraft.yunit.service.StartupRecoveryServiceImpl
@@ -32,6 +33,7 @@ class Yunit : JavaPlugin() {
 
     private lateinit var dbProvider: HikariDatabaseProvider
     private lateinit var pluginScope: CoroutineScope
+    private var redisManager: RedisManager? = null
 
     override fun onEnable() {
         // Coroutine Scope oluştur
@@ -68,9 +70,15 @@ class Yunit : JavaPlugin() {
         // Cache
         val cache = CaffeineAccountCache(pluginConfig.cache)
 
+        // Redis
+        redisManager = RedisManager(pluginConfig.redis, logger) { uuid ->
+            cache.invalidate(uuid)
+        }
+        redisManager?.connect()
+
         // Services
         val economyService = EconomyServiceImpl(
-            dbProvider, accountRepo, transactionRepo, cache, pluginConfig, logger
+            dbProvider, accountRepo, transactionRepo, cache, redisManager, pluginConfig, logger
         )
         
         val purchaseService = SafePurchaseServiceImpl(
@@ -127,10 +135,14 @@ class Yunit : JavaPlugin() {
         if (::pluginScope.isInitialized) {
             pluginScope.cancel("Plugin disabled")
         }
-        
+
         // Veritabanı bağlantılarını kapat
         if (::dbProvider.isInitialized) {
             dbProvider.shutdown()
         }
+
+        // Redis bağlantılarını kapat
+        redisManager?.shutdown()
+
     }
 }
