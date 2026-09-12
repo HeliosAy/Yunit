@@ -1,0 +1,8 @@
+# Yunit - Dil Dosyası (MiniMessage formatı desteklenir)
+prefix: "<gold><b>YUNIT</b></gold> <dark_gray>│</dark_gray> <gray>"
+
+messages:
+  balance: "Bakiyen: <green>{balance}</green> {currency}"
+  no-permission: "<red>Bunun için yetkiniz yok.</red>"
+  player-only: "<red>Bu komutu sadece oyuncular kullanabilir.</red>"
+  error-occurred: "<red>Bir hata oluştu: {error}</red>"

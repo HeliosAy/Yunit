@@ -1,0 +1,22 @@
+name: Yunit
+version: 'v1.0'
+main: net.yaycraft.yunit.Yunit
+api-version: '1.21'
+description: Yaycraft Unified Network Token System
+author: Yaycraft
+
+commands:
+  yunit:
+    description: "Yunit bakiyenizi gösterir"
+    permission: yunit.use
+  yunitadmin:
+    description: "Yunit admin komutları"
+    permission: yunit.admin
+
+permissions:
+  yunit.use:
+    description: "Yunit bakiyesini görüntüleme yetkisi"
+    default: true
+  yunit.admin:
+    description: "Yunit admin komutlarını kullanma yetkisi"
+    default: op

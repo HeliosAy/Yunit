@@ -1,0 +1,36 @@
+# Yunit - Yaycraft Unified Network Token
+# Veritabanı Yapılandırması
+database:
+  host: "localhost"
+  port: 3306
+  database: "yunit"
+  username: "root"
+  password: "password"
+  use-ssl: false
+  pool:
+    maximum-pool-size: 15
+    minimum-idle: 3
+    connection-timeout: 5000
+    idle-timeout: 300000
+    max-lifetime: 600000
+
+# Önbellek Ayarları
+cache:
+  expire-after-write-seconds: 30
+  maximum-size: 2000
+
+# Sunucu Tanımlama (her sunucuda farklı olmalı)
+server-name: "survival"
+
+# Para Birimi
+currency:
+  symbol: "*"
+  name: "Yunit"
+
+# Güvenlik Ayarları
+safety:
+  transaction-cooldown-ms: 500
+  health-check-interval-seconds: 10
+
+# Debug modu
+debug: false
