@@ -18,6 +18,7 @@ import net.yaycraft.yunit.config.ConfigManager
 import net.yaycraft.yunit.config.LangManager
 import net.yaycraft.yunit.database.HikariDatabaseProvider
 import net.yaycraft.yunit.database.SQLMigrator
+import net.yaycraft.yunit.hook.papi.YunitPlaceholderExpansion
 import net.yaycraft.yunit.listener.PlayerConnectionListener
 import net.yaycraft.yunit.repository.MySQLAccountRepository
 import net.yaycraft.yunit.repository.MySQLPendingDeliveryRepository
@@ -84,6 +85,11 @@ class Yunit : JavaPlugin() {
         // API Kayıt Et
         val apiImpl = YunitAPIImpl(economyService, purchaseService, dbProvider, pluginScope)
         YunitProvider.register(apiImpl)
+
+        // PlaceholderAPI (PAPI) Entegrasyonu
+        if (server.pluginManager.getPlugin("PlaceholderAPI") != null) {
+            YunitPlaceholderExpansion(economyService, pluginConfig).register()
+        }
 
         // Dinleyiciler
         server.pluginManager.registerEvents(PlayerConnectionListener(economyService, cache, pluginScope), this)
