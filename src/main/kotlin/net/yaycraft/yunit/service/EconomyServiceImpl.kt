@@ -36,13 +36,19 @@ class EconomyServiceImpl(
         if (cached != null) return cached.balance
 
         return withContext(dbDispatcher) {
-            dbProvider.executeTransaction { conn ->
-                val account = accountRepo.findByUuid(conn, uuid)
-                if (account != null) {
-                    cache.put(uuid, account)
-                    account.balance
-                } else {
-                    BigDecimal.ZERO
+            val mutex = playerLocks.computeIfAbsent(uuid) { Mutex() }
+            mutex.withLock {
+                val doubleCheck = cache.get(uuid)
+                if (doubleCheck != null) return@withLock doubleCheck.balance
+
+                dbProvider.executeTransaction { conn ->
+                    val account = accountRepo.findByUuid(conn, uuid)
+                    if (account != null) {
+                        cache.put(uuid, account)
+                        account.balance
+                    } else {
+                        BigDecimal.ZERO
+                    }
                 }
             }
         }
@@ -186,17 +192,23 @@ class EconomyServiceImpl(
         val cached = cache.get(uuid)
         if (cached != null) return@withContext cached
         
-        dbProvider.executeTransaction { conn ->
-            var account = accountRepo.findByUuidForUpdate(conn, uuid)
-            if (account == null) {
-                account = accountRepo.create(conn, uuid, username)
-            } else if (account.username != username) {
-                // Oyuncu isim değiştirmişse güncelle
-                accountRepo.updateUsername(conn, uuid, username)
-                account = account.copy(username = username)
+        val mutex = playerLocks.computeIfAbsent(uuid) { Mutex() }
+        mutex.withLock {
+            val doubleCheck = cache.get(uuid)
+            if (doubleCheck != null) return@withLock doubleCheck
+
+            dbProvider.executeTransaction { conn ->
+                var account = accountRepo.findByUuidForUpdate(conn, uuid)
+                if (account == null) {
+                    account = accountRepo.create(conn, uuid, username)
+                } else if (account.username != username) {
+                    // Oyuncu isim değiştirmişse güncelle
+                    accountRepo.updateUsername(conn, uuid, username)
+                    account = account.copy(username = username)
+                }
+                cache.put(uuid, account)
+                account
             }
-            cache.put(uuid, account)
-            account
         }
     }
 

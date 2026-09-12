@@ -50,7 +50,7 @@ class SafePurchaseServiceImpl(
             return@withContext PurchaseResult.Error("Çok hızlı işlem, lütfen bekleyin")
         
         val mutex = playerLocks.computeIfAbsent(uuid) { Mutex() }
-        mutex.withLock {
+        val purchaseLockResult = mutex.withLock {
             lastPurchaseTime[uuid] = System.currentTimeMillis()
             
             val withdrawResult = try {
@@ -98,26 +98,29 @@ class SafePurchaseServiceImpl(
             if (updatedAccount == null) return@withLock PurchaseResult.Error(txnOrError as String)
             if (txnOrError == "INSUFFICIENT") return@withLock PurchaseResult.InsufficientBalance(amount, updatedAccount.balance)
             
-            val transaction = txnOrError as Transaction
-            pendingId as Long
-            
-            val delivered = try {
-                // Teslimat işlemi caller tarafa bırakılmıştır.
-                // Bu servis dbDispatcher üzerinde çalıştığından, deliveryAction Bukkit API'lerine erişiyorsa
-                // ana thread'e aktarım ve thread güvenliği caller tarafın sorumluluğundadır, bu classın sorumlulupu değildir!
-                deliveryAction()
-            } catch (e: Exception) {
-                logger.warning("Delivery exception: ${e.message}")
-                false
-            }
-            
-            if (delivered) {
-                markDelivered(pendingId)
-                PurchaseResult.Success(updatedAccount, transaction)
-            } else {
-                refundPending(pendingId, uuid, amount, pluginName)
-                PurchaseResult.DeliveryFailed(amount, "Teslim başarısız, para iade edildi")
-            }
+            Triple(updatedAccount, txnOrError as Transaction, pendingId as Long)
+        }
+        
+        if (purchaseLockResult is PurchaseResult) {
+            return@withContext purchaseLockResult
+        }
+        
+        @Suppress("UNCHECKED_CAST")
+        val (updatedAccount, transaction, pendingId) = purchaseLockResult as Triple<YunitAccount, Transaction, Long>
+        
+        val delivered = try {
+            deliveryAction()
+        } catch (e: Exception) {
+            logger.warning("Delivery exception: ${e.message}")
+            false
+        }
+        
+        if (delivered) {
+            markDelivered(pendingId)
+            return@withContext PurchaseResult.Success(updatedAccount, transaction)
+        } else {
+            refundPending(pendingId, uuid, amount, pluginName)
+            return@withContext PurchaseResult.DeliveryFailed(amount, "Teslim başarısız, para iade edildi")
         }
     }
     
@@ -127,25 +130,28 @@ class SafePurchaseServiceImpl(
         }
     }
     
-    private fun refundPending(pendingId: Long, uuid: UUID, amount: BigDecimal, pluginName: String) {
-        dbProvider.executeTransaction { conn ->
-            val account = accountRepo.findByUuidForUpdate(conn, uuid) ?: return@executeTransaction
-            val newBalance = account.balance + amount
-            accountRepo.updateBalance(conn, uuid, newBalance)
-            
-            transactionRepo.create(conn, Transaction(
-                playerUuid = uuid,
-                type = TransactionType.REFUND,
-                amount = amount,
-                balanceBefore = account.balance,
-                balanceAfter = newBalance,
-                description = "Otomatik iade: teslim başarısız ($pluginName)",
-                sourceServer = config.serverName,
-                initiatedBy = "SYSTEM"
-            ))
-            
-            pendingRepo.updateStatus(conn, pendingId, DeliveryStatus.REFUNDED)
-            cache.invalidate(uuid)
+    private suspend fun refundPending(pendingId: Long, uuid: UUID, amount: BigDecimal, pluginName: String) {
+        val mutex = playerLocks.computeIfAbsent(uuid) { Mutex() }
+        mutex.withLock {
+            dbProvider.executeTransaction { conn ->
+                val account = accountRepo.findByUuidForUpdate(conn, uuid) ?: return@executeTransaction
+                val newBalance = account.balance + amount
+                accountRepo.updateBalance(conn, uuid, newBalance)
+                
+                transactionRepo.create(conn, Transaction(
+                    playerUuid = uuid,
+                    type = TransactionType.REFUND,
+                    amount = amount,
+                    balanceBefore = account.balance,
+                    balanceAfter = newBalance,
+                    description = "Otomatik iade: teslim başarısız ($pluginName)",
+                    sourceServer = config.serverName,
+                    initiatedBy = "SYSTEM"
+                ))
+                
+                pendingRepo.updateStatus(conn, pendingId, DeliveryStatus.REFUNDED)
+                cache.invalidate(uuid)
+            }
         }
     }
 }
