@@ -49,8 +49,17 @@ class HikariDatabaseProvider(private val logger: Logger) : IDatabaseProvider {
             logger.info("Veritabanı bağlantısı başarılı: ${config.host}:${config.port}/${config.database}")
         } catch (e: Exception) {
             isHealthy = false
-            logger.log(Level.SEVERE, "Veritabanı bağlantı hatası!", e)
-            throw DatabaseException("Veritabanına bağlanılamadı", e)
+            logger.severe("=====================================================")
+            logger.severe("                YUNIT - KRITIK HATA                  ")
+            logger.severe("=====================================================")
+            logger.severe(" MySQL veritabanına bağlanılamadı! Eklenti durduruldu.")
+            logger.severe(" Lütfen 'plugins/Yunit/config.yml' dosyasını acin")
+            logger.severe(" ve veritabani bilgilerinizi (kullanici adi, sifre) ")
+            logger.severe(" dogru girdiginizden emin olun.")
+            logger.severe("-----------------------------------------------------")
+            logger.severe(" Hata Detayi: ${e.message}")
+            logger.severe("=====================================================")
+            throw DatabaseException("Veritabanina baglanilamadi", e)
         }
     }
 
