@@ -3,6 +3,7 @@ package net.yaycraft.yunit.service
 import net.yaycraft.yunit.model.PurchaseResult
 import java.math.BigDecimal
 import java.util.UUID
+import java.util.function.BooleanSupplier
 
 interface ISafePurchaseService {
     suspend fun executePurchase(
@@ -11,6 +12,6 @@ interface ISafePurchaseService {
         description: String,
         pluginName: String,
         deliveryData: String,
-        deliveryAction: () -> Boolean
+        deliveryAction: BooleanSupplier
     ): PurchaseResult
 }

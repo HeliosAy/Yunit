@@ -12,6 +12,7 @@ import net.yaycraft.yunit.service.ISafePurchaseService
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.function.BooleanSupplier
 
 class YunitAPIImpl(
     private val economyService: IEconomyService,
@@ -63,7 +64,7 @@ class YunitAPIImpl(
     override fun executePurchase(
         uuid: UUID, amount: BigDecimal, description: String,
         pluginName: String, deliveryData: String,
-        deliveryAction: () -> Boolean
+        deliveryAction: BooleanSupplier
     ): CompletableFuture<PurchaseResult> {
         return scope.future {
             purchaseService.executePurchase(

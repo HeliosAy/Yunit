@@ -14,6 +14,7 @@ import net.yaycraft.yunit.repository.ITransactionRepository
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.function.BooleanSupplier
 import java.util.logging.Logger
 
 class SafePurchaseServiceImpl(
@@ -35,7 +36,7 @@ class SafePurchaseServiceImpl(
     override suspend fun executePurchase(
         uuid: UUID, amount: BigDecimal, description: String,
         pluginName: String, deliveryData: String,
-        deliveryAction: () -> Boolean
+        deliveryAction: BooleanSupplier
     ): PurchaseResult = withContext(dbDispatcher) {
         
         if (amount <= BigDecimal.ZERO) 
@@ -109,17 +110,26 @@ class SafePurchaseServiceImpl(
         val (updatedAccount, transaction, pendingId) = purchaseLockResult as Triple<YunitAccount, Transaction, Long>
         
         val delivered = try {
-            deliveryAction()
-        } catch (e: Exception) {
-            logger.warning("Delivery exception: ${e.message}")
+            deliveryAction.asBoolean
+        } catch (t: Throwable) {
+            logger.log(java.util.logging.Level.SEVERE, "Delivery sırasında hata oluştu: ${t.message}", t)
             false
         }
         
         if (delivered) {
-            markDelivered(pendingId)
+            try {
+                markDelivered(pendingId)
+            } catch (t: Throwable) {
+                logger.log(java.util.logging.Level.SEVERE, "markDelivered hatası (pendingId: $pendingId): ${t.message}", t)
+            }
             return@withContext PurchaseResult.Success(updatedAccount, transaction)
         } else {
-            refundPending(pendingId, uuid, amount, pluginName)
+            try {
+                refundPending(pendingId, uuid, amount, pluginName)
+                logger.info("Otomatik iade başarıyla tamamlandı: $uuid, pendingId: $pendingId, tutar: $amount")
+            } catch (t: Throwable) {
+                logger.log(java.util.logging.Level.SEVERE, "refundPending çağrısında hata (pendingId: $pendingId): ${t.message}", t)
+            }
             return@withContext PurchaseResult.DeliveryFailed(amount, "Teslim başarısız, para iade edildi")
         }
     }
@@ -133,24 +143,33 @@ class SafePurchaseServiceImpl(
     private suspend fun refundPending(pendingId: Long, uuid: UUID, amount: BigDecimal, pluginName: String) {
         val mutex = playerLocks.computeIfAbsent(uuid) { Mutex() }
         mutex.withLock {
-            dbProvider.executeTransaction { conn ->
-                val account = accountRepo.findByUuidForUpdate(conn, uuid) ?: return@executeTransaction
-                val newBalance = account.balance + amount
-                accountRepo.updateBalance(conn, uuid, newBalance)
-                
-                transactionRepo.create(conn, Transaction(
-                    playerUuid = uuid,
-                    type = TransactionType.REFUND,
-                    amount = amount,
-                    balanceBefore = account.balance,
-                    balanceAfter = newBalance,
-                    description = "Otomatik iade: teslim başarısız ($pluginName)",
-                    sourceServer = config.serverName,
-                    initiatedBy = "SYSTEM"
-                ))
-                
-                pendingRepo.updateStatus(conn, pendingId, DeliveryStatus.REFUNDED)
-                cache.invalidate(uuid)
+            try {
+                dbProvider.executeTransaction { conn ->
+                    val account = accountRepo.findByUuidForUpdate(conn, uuid)
+                    if (account == null) {
+                        logger.severe("refundPending: Oyuncu hesabı bulunamadı ($uuid)")
+                        return@executeTransaction
+                    }
+                    val newBalance = account.balance + amount
+                    accountRepo.updateBalance(conn, uuid, newBalance)
+                    
+                    transactionRepo.create(conn, Transaction(
+                        playerUuid = uuid,
+                        type = TransactionType.REFUND,
+                        amount = amount,
+                        balanceBefore = account.balance,
+                        balanceAfter = newBalance,
+                        description = "Otomatik iade: teslim başarısız ($pluginName)",
+                        sourceServer = config.serverName,
+                        initiatedBy = "SYSTEM"
+                    ))
+                    
+                    pendingRepo.updateStatus(conn, pendingId, DeliveryStatus.REFUNDED)
+                    cache.invalidate(uuid)
+                }
+            } catch (t: Throwable) {
+                logger.log(java.util.logging.Level.SEVERE, "refundPending veritabanı transaction hatası: ${t.message}", t)
+                throw t
             }
         }
     }

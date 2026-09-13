@@ -7,6 +7,7 @@ import net.yaycraft.yunit.model.YunitAccount
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
+import java.util.function.BooleanSupplier
 
 interface YunitAPI {
     
@@ -34,7 +35,7 @@ interface YunitAPI {
         description: String,
         pluginName: String,
         deliveryData: String,
-        deliveryAction: () -> Boolean
+        deliveryAction: BooleanSupplier
     ): CompletableFuture<PurchaseResult>
     
     fun isDatabaseHealthy(): Boolean
