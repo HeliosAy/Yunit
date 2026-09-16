@@ -126,6 +126,13 @@ class SQLMigrator(
                         FOREIGN KEY (player_uuid) REFERENCES yunit_accounts(uuid)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """.trimIndent()
+            ),
+            Migration(
+                version = 2,
+                name = "Longer usernames",
+                sql = """
+                    ALTER TABLE yunit_accounts MODIFY username VARCHAR(32) NOT NULL;
+                """.trimIndent()
             )
         )
     }

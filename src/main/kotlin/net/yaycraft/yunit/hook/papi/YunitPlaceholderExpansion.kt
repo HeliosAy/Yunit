@@ -1,71 +1,69 @@
 package net.yaycraft.yunit.hook.papi
 
-import kotlinx.coroutines.runBlocking
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import me.clip.placeholderapi.expansion.PlaceholderExpansion
 import net.yaycraft.yunit.config.PluginConfig
 import net.yaycraft.yunit.service.IEconomyService
+import net.yaycraft.yunit.util.format
 import org.bukkit.OfflinePlayer
-import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
-import java.util.Locale
+import java.math.BigDecimal
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
 
 class YunitPlaceholderExpansion(
     private val economyService: IEconomyService,
-    private val config: PluginConfig
+    private val config: PluginConfig,
+    private val scope: CoroutineScope,
+    private val pluginVersion: String
 ) : PlaceholderExpansion() {
 
-    private val decimalFormat: DecimalFormat
+    private val lastKnown: Cache<UUID, BigDecimal> = Caffeine.newBuilder()
+        .expireAfterAccess(10, TimeUnit.MINUTES)
+        .maximumSize(10_000)
+        .build()
 
-    init {
-        val symbols = DecimalFormatSymbols(Locale.US)
-        symbols.groupingSeparator = '.'
-        symbols.decimalSeparator = ','
-        decimalFormat = DecimalFormat("#,##0.00", symbols)
-    }
+    private val recentLoads: Cache<UUID, Boolean> = Caffeine.newBuilder()
+        .expireAfterWrite(3, TimeUnit.SECONDS)
+        .maximumSize(10_000)
+        .build()
 
-    override fun getIdentifier(): String {
-        return "yunit"
-    }
+    override fun getIdentifier(): String = "yunit"
 
-    override fun getAuthor(): String {
-        return "HeliosAy"
-    }
+    override fun getAuthor(): String = "HeliosAy"
 
-    override fun getVersion(): String {
-        return "1.0"
-    }
+    override fun getVersion(): String = pluginVersion
 
-    override fun persist(): Boolean {
-        return true
-    }
+    override fun persist(): Boolean = true
 
     override fun onRequest(player: OfflinePlayer?, params: String): String? {
-        if (player == null) return null
-
         return when (params.lowercase()) {
-            "balance" -> {
-                try {
-                    val balance = runBlocking { economyService.getBalance(player.uniqueId) }
-                    decimalFormat.format(balance)
-                } catch (e: Exception) {
-                    "0,00"
-                }
-            }
-            "balance_raw" -> {
-                try {
-                    val balance = runBlocking { economyService.getBalance(player.uniqueId) }
-                    balance.toPlainString()
-                } catch (e: Exception) {
-                    "0"
-                }
-            }
-            "currency_name" -> {
-                config.currencyName
-            }
-            "currency_symbol" -> {
-                config.currencySymbol
-            }
+            "balance" -> player?.let { balanceOf(it.uniqueId)?.format() ?: "..." }
+            "balance_raw" -> player?.let { balanceOf(it.uniqueId)?.toPlainString() ?: "0" }
+            "currency_name" -> config.currencyName
+            "currency_symbol" -> config.currencySymbol
             else -> null
         }
+    }
+
+    private fun balanceOf(uuid: UUID): BigDecimal? {
+        val cached = economyService.getCachedBalance(uuid)
+        if (cached != null) {
+            lastKnown.put(uuid, cached)
+            return cached
+        }
+
+        if (recentLoads.asMap().putIfAbsent(uuid, true) == null) {
+            scope.launch {
+                try {
+                    lastKnown.put(uuid, economyService.getBalance(uuid))
+                } catch (ignored: Exception) {
+                }
+            }
+        }
+        return lastKnown.getIfPresent(uuid)
     }
 }

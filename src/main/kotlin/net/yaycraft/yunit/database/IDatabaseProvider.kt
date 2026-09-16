@@ -13,8 +13,11 @@ interface IDatabaseProvider {
     /** Tüm bağlantıları temiz şekilde kapatır */
     fun shutdown()
 
-    /** Veritabanı çalışıyr mu kontrol eder */
+    /** Son sağlık kontrolünün sonucunu döner (veritabanına gitmez) */
     fun isHealthy(): Boolean
+
+    /** Veritabanını gerçekten test eder ve sağlık durumunu günceller (periyodik çağrılır) */
+    fun checkHealth(): Boolean
 
     /** Atomik transaction çalıştırır. Hata olursa otomatik ROLLBACK */
     fun <T> executeTransaction(block: (Connection) -> T): T

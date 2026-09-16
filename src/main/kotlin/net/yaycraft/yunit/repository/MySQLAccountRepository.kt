@@ -34,8 +34,25 @@ class MySQLAccountRepository : IAccountRepository {
         return null
     }
 
+    override fun findByUsername(connection: Connection, username: String): List<YunitAccount> {
+        val query = "SELECT * FROM yunit_accounts WHERE username = ? LIMIT 10"
+        val list = mutableListOf<YunitAccount>()
+        connection.prepareStatement(query).use { stmt ->
+            stmt.setString(1, username)
+            stmt.executeQuery().use { rs ->
+                while (rs.next()) {
+                    list.add(mapRowToAccount(rs))
+                }
+            }
+        }
+        return list
+    }
+
     override fun create(connection: Connection, uuid: UUID, username: String): YunitAccount {
-        val query = "INSERT INTO yunit_accounts (uuid, username, balance) VALUES (?, ?, ?)"
+        val query = """
+            INSERT INTO yunit_accounts (uuid, username, balance) VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE username = VALUES(username)
+        """.trimIndent()
         connection.prepareStatement(query).use { stmt ->
             stmt.setString(1, uuid.toString())
             stmt.setString(2, username)

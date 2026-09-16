@@ -1,6 +1,5 @@
 package net.yaycraft.yunit.util
 
-import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.yaycraft.yunit.config.LangManager
 import org.bukkit.command.CommandSender
@@ -32,6 +31,9 @@ class MessageUtil(private val langManager: LangManager) {
         sender.sendMessage(parsed)
     }
     
+    /** Kullanıcıdan gelen metindeki MiniMessage etiketlerini etkisiz hale getirir */
+    fun escape(text: String): String = miniMessage.escapeTags(text)
+
     fun getMessage(path: String, default: String): String {
         return langManager.getMessage(path, default)
     }

@@ -11,15 +11,24 @@ import java.util.logging.Logger
 
 class HikariDatabaseProvider(private val logger: Logger) : IDatabaseProvider {
 
+    @Volatile
     private var dataSource: HikariDataSource? = null
-    private var isHealthy = false
+
+    // Her işlemde bağlantı açıp test etmek yerine periyodik kontrolün sonucu tutulur.
+    @Volatile
+    private var healthy = false
 
     override fun initialize(config: DatabaseConfig) {
         val hikariConfig = HikariConfig().apply {
-            jdbcUrl = "jdbc:mysql://${config.host}:${config.port}/${config.database}?useSSL=${config.useSSL}&characterEncoding=UTF-8"
+            jdbcUrl = buildString {
+                append("jdbc:mysql://${config.host}:${config.port}/${config.database}")
+                append("?useSSL=${config.useSSL}&characterEncoding=UTF-8")
+                if (!config.useSSL) append("&allowPublicKeyRetrieval=true")
+            }
             username = config.username
             password = config.password
-            
+            poolName = "Yunit-Pool"
+
             maximumPoolSize = config.poolSize
             minimumIdle = config.minimumIdle
             connectionTimeout = config.connectionTimeout
@@ -40,15 +49,18 @@ class HikariDatabaseProvider(private val logger: Logger) : IDatabaseProvider {
         }
 
         try {
-            dataSource = HikariDataSource(hikariConfig)
-            
+            val ds = HikariDataSource(hikariConfig)
+            dataSource = ds
+
             // Test connection
-            dataSource!!.connection.use { conn ->
-                isHealthy = conn.isValid(2)
+            ds.connection.use { conn ->
+                healthy = conn.isValid(2)
             }
             logger.info("Veritabanı bağlantısı başarılı: ${config.host}:${config.port}/${config.database}")
         } catch (e: Exception) {
-            isHealthy = false
+            healthy = false
+            dataSource?.close()
+            dataSource = null
             logger.severe("=====================================================")
             logger.severe("                YUNIT - KRITIK HATA                  ")
             logger.severe("=====================================================")
@@ -66,48 +78,63 @@ class HikariDatabaseProvider(private val logger: Logger) : IDatabaseProvider {
     override fun getConnection(): Connection {
         val ds = dataSource ?: throw IllegalStateException("DatabaseProvider henüz başlatılmadı!")
         return try {
-            val conn = ds.connection
-            isHealthy = true
-            conn
+            ds.connection
         } catch (e: Exception) {
-            isHealthy = false
-            throw DatabaseUnavailableException()
+            markUnhealthy(e)
+            throw DatabaseUnavailableException(e)
         }
     }
 
     override fun shutdown() {
-        if (dataSource != null && !dataSource!!.isClosed) {
-            dataSource!!.close()
+        healthy = false
+        val ds = dataSource ?: return
+        if (!ds.isClosed) {
+            ds.close()
             logger.info("Veritabanı bağlantıları kapatıldı.")
         }
     }
 
     override fun isHealthy(): Boolean {
+        val ds = dataSource ?: return false
+        return healthy && !ds.isClosed
+    }
 
-        if (dataSource == null || dataSource!!.isClosed) return false
-        
-        return try {
-            dataSource!!.connection.use { conn ->
-                val valid = conn.isValid(1)
-                isHealthy = valid
-                valid
-            }
+    override fun checkHealth(): Boolean {
+        val ds = dataSource
+        if (ds == null || ds.isClosed) return false
+
+        val valid = try {
+            ds.connection.use { it.isValid(2) }
         } catch (e: Exception) {
-            isHealthy = false
             false
         }
+
+        if (valid && !healthy) logger.info("Veritabanı bağlantısı tekrar sağlandı.")
+        if (!valid && healthy) logger.severe("Veritabanı bağlantısı koptu! Ekonomi işlemleri geçici olarak durduruldu.")
+        healthy = valid
+        return valid
+    }
+
+    private fun markUnhealthy(e: Exception) {
+        if (healthy) {
+            logger.log(Level.SEVERE, "Veritabanından bağlantı alınamadı, işlemler durduruluyor: ${e.message}")
+        }
+        healthy = false
     }
 
     override fun <T> executeTransaction(block: (Connection) -> T): T {
         val connection = getConnection()
+        val autoCommitOriginal = try {
+            connection.autoCommit
+        } catch (e: Exception) {
+            connection.close()
+            throw DatabaseException("Transaction başlatılamadı", e)
+        }
+
         return try {
-            val autoCommitOriginal = connection.autoCommit
             connection.autoCommit = false
-            
             val result = block(connection)
-            
             connection.commit()
-            connection.autoCommit = autoCommitOriginal
             result
         } catch (e: Exception) {
             try {
@@ -117,6 +144,10 @@ class HikariDatabaseProvider(private val logger: Logger) : IDatabaseProvider {
             }
             throw DatabaseException("Transaction hatası", e)
         } finally {
+            try {
+                connection.autoCommit = autoCommitOriginal
+            } catch (ignored: Exception) {
+            }
             try {
                 connection.close()
             } catch (closeEx: Exception) {

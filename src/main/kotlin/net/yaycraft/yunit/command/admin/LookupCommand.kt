@@ -3,11 +3,11 @@ package net.yaycraft.yunit.command.admin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import net.yaycraft.yunit.command.ISubCommand
+import net.yaycraft.yunit.command.PlayerResolver
 import net.yaycraft.yunit.config.PluginConfig
 import net.yaycraft.yunit.service.IEconomyService
 import net.yaycraft.yunit.util.MessageUtil
 import net.yaycraft.yunit.util.format
-import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 
 /**
@@ -17,6 +17,7 @@ class LookupCommand(
     private val economyService: IEconomyService,
     private val config: PluginConfig,
     private val messageUtil: MessageUtil,
+    private val resolver: PlayerResolver,
     private val scope: CoroutineScope
 ) : ISubCommand {
 
@@ -30,17 +31,27 @@ class LookupCommand(
             return
         }
 
-        val targetName = args[0]
-
-        @Suppress("DEPRECATION")
-        val target = Bukkit.getOfflinePlayer(targetName)
+        val lookup = resolver.prepare(args[0])
 
         scope.launch {
             try {
-                val balance = economyService.getBalance(target.uniqueId)
-                messageUtil.send(sender, "$targetName bakiyesi: <green>${balance.format()}</green> ${config.currencySymbol}")
+                val target = resolver.resolve(lookup)
+                if (target == null) {
+                    messageUtil.sendError(sender, "Oyuncu bulunamadı: ${messageUtil.escape(args[0])}")
+                    return@launch
+                }
+
+                val account = economyService.findAccount(target.uuid)
+                if (account == null) {
+                    messageUtil.send(sender, "${messageUtil.escape(target.name)} için henüz Yunit hesabı yok.")
+                    return@launch
+                }
+                messageUtil.send(
+                    sender,
+                    "${messageUtil.escape(account.username)} bakiyesi: <green>${account.balance.format()}</green> ${config.currencySymbol} <dark_gray>(${account.uuid})</dark_gray>"
+                )
             } catch (e: Exception) {
-                messageUtil.sendError(sender, "Hata: ${e.message}")
+                messageUtil.sendError(sender, "Hata: ${messageUtil.escape(e.message ?: "Bilinmeyen hata")}")
             }
         }
     }

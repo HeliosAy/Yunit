@@ -2,11 +2,20 @@ package net.yaycraft.yunit
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import net.yaycraft.yunit.api.YunitAPIImpl
 import net.yaycraft.yunit.api.YunitProvider
 import net.yaycraft.yunit.cache.CaffeineAccountCache
+import net.yaycraft.yunit.command.PlayerResolver
 import net.yaycraft.yunit.hook.HookManager
 import net.yaycraft.yunit.command.admin.AdminCommandManager
 import net.yaycraft.yunit.command.admin.GiveCommand
@@ -24,7 +33,9 @@ import net.yaycraft.yunit.repository.MySQLAccountRepository
 import net.yaycraft.yunit.repository.MySQLPendingDeliveryRepository
 import net.yaycraft.yunit.repository.MySQLTransactionRepository
 import net.yaycraft.yunit.redis.RedisManager
+import net.yaycraft.yunit.service.BalanceChangeNotifier
 import net.yaycraft.yunit.service.EconomyServiceImpl
+import net.yaycraft.yunit.service.PlayerGuard
 import net.yaycraft.yunit.service.SafePurchaseServiceImpl
 import net.yaycraft.yunit.service.StartupRecoveryServiceImpl
 import net.yaycraft.yunit.util.MessageUtil
@@ -35,7 +46,9 @@ class Yunit : JavaPlugin() {
     private lateinit var dbProvider: HikariDatabaseProvider
     private lateinit var pluginScope: CoroutineScope
     private var redisManager: RedisManager? = null
+    private var healthCheckJob: Job? = null
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun onEnable() {
         // Coroutine Scope oluştur
         pluginScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -54,8 +67,13 @@ class Yunit : JavaPlugin() {
         }
 
         // Migration Çalıştır
-        val migrator = SQLMigrator(dbProvider, logger)
-        migrator.migrate()
+        try {
+            SQLMigrator(dbProvider, logger).migrate()
+        } catch (e: Exception) {
+            logger.severe("Veritabanı migration başarısız, Yunit devre dışı bırakılıyor.")
+            server.pluginManager.disablePlugin(this)
+            return
+        }
 
         // Dil Dosyası (LangManager)
         val langManager = LangManager(this)
@@ -76,25 +94,42 @@ class Yunit : JavaPlugin() {
         }
         redisManager?.connect()
 
+        // Servislerin ortak kullandığı parçalar
+        val dbDispatcher = Dispatchers.IO.limitedParallelism(pluginConfig.database.poolSize)
+        val guard = PlayerGuard(pluginConfig.safety.transactionCooldownMs)
+        val notifier = BalanceChangeNotifier(cache, redisManager)
+
         // Services
         val economyService = EconomyServiceImpl(
-            dbProvider, accountRepo, transactionRepo, cache, redisManager, pluginConfig, logger
+            dbProvider, accountRepo, transactionRepo, cache, guard, notifier, dbDispatcher, pluginConfig, logger
         )
 
         val purchaseService = SafePurchaseServiceImpl(
-            dbProvider, accountRepo, transactionRepo, pendingRepo, cache, pluginConfig, logger
+            dbProvider, accountRepo, transactionRepo, pendingRepo, guard, notifier, dbDispatcher, pluginConfig, logger
         )
 
         val recoveryService = StartupRecoveryServiceImpl(
-            dbProvider, accountRepo, transactionRepo, pendingRepo, cache, pluginConfig, logger
+            dbProvider, accountRepo, transactionRepo, pendingRepo, notifier, pluginConfig, logger
         )
 
+        // Recovery, API açılmadan (yeni satın almalar gelmeden) önce tamamlanır
+        recoveryService.recoverPendingDeliveries()
+
+        // Periyodik veritabanı sağlık kontrolü
+        healthCheckJob = pluginScope.launch(Dispatchers.IO) {
+            val intervalMs = pluginConfig.safety.healthCheckIntervalSeconds * 1000
+            while (isActive) {
+                delay(intervalMs)
+                dbProvider.checkHealth()
+            }
+        }
+
         // API Kayıt Et
-        val apiImpl = YunitAPIImpl(economyService, purchaseService, dbProvider, pluginScope)
+        val apiImpl = YunitAPIImpl(economyService, purchaseService, dbProvider, pluginConfig, pluginScope)
         YunitProvider.register(apiImpl)
 
         // Dış Eklenti Entegrasyonları
-        val hookManager = HookManager(server, logger, economyService, pluginConfig)
+        val hookManager = HookManager(server, logger, economyService, pluginConfig, pluginScope, pluginMeta.version)
         hookManager.registerHooks()
 
         // Dinleyiciler
@@ -111,11 +146,12 @@ class Yunit : JavaPlugin() {
         }
 
         // Admin Komutları (/yunitadmin)
+        val resolver = PlayerResolver(economyService)
         val adminSubCommands = listOf(
-            GiveCommand(economyService, pluginConfig, messageUtil, pluginScope),
-            TakeCommand(economyService, pluginConfig, messageUtil, pluginScope),
-            SetCommand(economyService, pluginConfig, messageUtil, pluginScope),
-            LookupCommand(economyService, pluginConfig, messageUtil, pluginScope)
+            GiveCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
+            TakeCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
+            SetCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
+            LookupCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope)
         )
         val adminCommandManager = AdminCommandManager(messageUtil, adminSubCommands)
         getCommand("yunitadmin")?.apply {
@@ -123,9 +159,10 @@ class Yunit : JavaPlugin() {
             tabCompleter = adminCommandManager
         }
 
-        // Startup Recovery Başlat
-        recoveryService.recoverPendingDeliveries()
-
+        if (!server.onlineMode) {
+            logger.info("Offline mod algılandı: hesaplar sunucunun verdiği UUID ile tutulur...")
+        }
+        logger.info("Sunucu adı: '${pluginConfig.serverName}'")
         logger.info("Yunit başarıyla başlatıldı! (Sürüm: ${pluginMeta.version})")
     }
 
@@ -135,8 +172,16 @@ class Yunit : JavaPlugin() {
         // API temizle
         YunitProvider.unregister()
 
-        // Coroutineleri iptal et
         if (::pluginScope.isInitialized) {
+            healthCheckJob?.cancel()
+
+            // Devam eden işlemlerin (ör. satın alma iadesi) bitmesi için kısa süre bekle
+            val running = pluginScope.coroutineContext[Job]?.children?.toList().orEmpty()
+            if (running.isNotEmpty()) {
+                runBlocking {
+                    withTimeoutOrNull(3000) { running.joinAll() }
+                }
+            }
             pluginScope.cancel("Plugin disabled")
         }
 
@@ -147,6 +192,5 @@ class Yunit : JavaPlugin() {
 
         // Redis bağlantılarını kapat
         redisManager?.shutdown()
-
     }
 }

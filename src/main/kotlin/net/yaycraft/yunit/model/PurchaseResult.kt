@@ -13,9 +13,15 @@ sealed class PurchaseResult {
         val available: BigDecimal
     ) : PurchaseResult()
     
+    /**
+     * Teslimat başarısız oldu.
+     * [refunded] false ise iade o an yapılamadı; kayıt PENDING kaldı ve
+     * sunucu yeniden başladığında recovery tarafından işlenecek.
+     */
     data class DeliveryFailed(
         val refundedAmount: BigDecimal,
-        val reason: String
+        val reason: String,
+        val refunded: Boolean = true
     ) : PurchaseResult()
     
     data class Error(

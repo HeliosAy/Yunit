@@ -13,7 +13,7 @@ class AccountNotFoundException(val uuid: UUID) : YunitException("Hesap bulunamad
 
 class DatabaseException(message: String, cause: Throwable? = null) : YunitException(message, cause)
 
-class DatabaseUnavailableException : YunitException("Veritabanı şu an erişilemez durumda")
+class DatabaseUnavailableException(cause: Throwable? = null) : YunitException("Veritabanı şu an erişilemez durumda", cause)
 
 class DuplicateTransactionException(val idempotencyKey: String) : YunitException("Duplicate işlem: $idempotencyKey")
 

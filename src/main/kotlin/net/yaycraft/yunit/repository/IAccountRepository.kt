@@ -10,6 +10,8 @@ interface IAccountRepository {
     
     fun findByUuidForUpdate(connection: Connection, uuid: UUID): YunitAccount?
     
+    fun findByUsername(connection: Connection, username: String): List<YunitAccount>
+
     fun create(connection: Connection, uuid: UUID, username: String): YunitAccount
     
     fun updateBalance(connection: Connection, uuid: UUID, newBalance: BigDecimal)

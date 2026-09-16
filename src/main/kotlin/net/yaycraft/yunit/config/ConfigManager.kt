@@ -41,10 +41,11 @@ class ConfigManager(private val plugin: JavaPlugin) {
 
         val safetyConfig = SafetyConfig(
             transactionCooldownMs = config.getLong("safety.transaction-cooldown-ms", 500),
-            healthCheckIntervalSeconds = config.getLong("safety.health-check-interval-seconds", 10)
+            healthCheckIntervalSeconds = config.getLong("safety.health-check-interval-seconds", 10).coerceAtLeast(1),
+            recoveryAutoRefund = config.getBoolean("safety.recovery-auto-refund", true)
         )
 
-        val serverName = config.getString("server-name") ?: "survival"
+        val serverName = config.getString("server-name")?.trim()?.takeIf { it.isNotEmpty() }?.take(64) ?: "survival"
         val currencySymbol = config.getString("currency.symbol") ?: "*"
         val currencyName = config.getString("currency.name") ?: "Yunit"
         val debug = config.getBoolean("debug", false)

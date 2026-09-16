@@ -28,6 +28,9 @@ cache:
   maximum-size: 2000
 
 # Sunucu Tanımlama (her sunucuda farklı olmalı)
+# !!! Aynı veritabanını kullanan HER SUNUCUDA FARKLI olmalıdır !!!
+# Yarım kalan satın almalar bu isme göre iade edilir; iki sunucu aynı ismi
+# kullanırsa biri yeniden başladığında diğerinin işlemlerini iade edebilir.
 server-name: "survival"
 
 # Para Birimi
@@ -37,8 +40,13 @@ currency:
 
 # Güvenlik Ayarları
 safety:
+  # Aynı oyuncunun arka arkaya satın alma/çekme işlemleri arasındaki en kısa süre
   transaction-cooldown-ms: 500
+  # Veritabanı bağlantısı bu aralıkla kontrol edilir; koparsa işlemler geçici olarak durur
   health-check-interval-seconds: 10
+  # Sunucu çökerse yarım kalan (para çekilmiş ama teslim edilmemiş) satın almalar
+  # açılışta otomatik iade edilsin mi? false ise sadece konsola listelenir.
+  recovery-auto-refund: true
 
 # Debug modu
 debug: false

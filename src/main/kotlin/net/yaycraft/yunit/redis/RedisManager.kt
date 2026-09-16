@@ -1,11 +1,14 @@
 package net.yaycraft.yunit.redis
 
 import net.yaycraft.yunit.config.RedisConfig
-import redis.clients.jedis.Jedis
 import redis.clients.jedis.JedisPool
 import redis.clients.jedis.JedisPoolConfig
 import redis.clients.jedis.JedisPubSub
 import java.util.UUID
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.concurrent.thread
@@ -15,9 +18,17 @@ class RedisManager(
     private val logger: Logger,
     private val onInvalidate: (UUID) -> Unit
 ) {
+    @Volatile
     private var jedisPool: JedisPool? = null
     private var pubSubThread: Thread? = null
+
+    @Volatile
     private var jedisPubSub: JedisPubSub? = null
+
+    @Volatile
+    private var running = false
+
+    private var publishExecutor: ExecutorService? = null
 
     private val channelName = "yunit:sync"
 
@@ -32,17 +43,22 @@ class RedisManager(
                 testOnBorrow = true
             }
 
-            jedisPool = if (config.password != null) {
+            val pool = if (config.password != null) {
                 JedisPool(poolConfig, config.host, config.port, 2000, config.password)
             } else {
                 JedisPool(poolConfig, config.host, config.port, 2000)
             }
+            jedisPool = pool
 
-            jedisPool!!.resource.use { jedis ->
+            pool.resource.use { jedis ->
                 jedis.ping()
                 logger.info("Redis bağlantısı başarıyla kuruldu: ${config.host}:${config.port}")
             }
 
+            publishExecutor = Executors.newSingleThreadExecutor { r ->
+                Thread(r, "Yunit-Redis-Publisher").apply { isDaemon = true }
+            }
+            running = true
             startSubscriber()
         } catch (e: Exception) {
             logger.log(Level.SEVERE, "Redis bağlantısı kurulamadı! Lütfen bilgileri kontrol edin.", e)
@@ -53,31 +69,32 @@ class RedisManager(
 
     private fun startSubscriber() {
         pubSubThread = thread(start = true, isDaemon = true, name = "Yunit-Redis-Subscriber") {
-            while (!Thread.currentThread().isInterrupted) {
+            while (running) {
                 try {
-                    jedisPool?.resource?.use { jedis ->
-                        jedisPubSub = object : JedisPubSub() {
+                    val pool = jedisPool ?: break
+                    pool.resource.use { jedis ->
+                        val pubSub = object : JedisPubSub() {
                             override fun onMessage(channel: String?, message: String?) {
                                 if (channel == channelName && message != null) {
                                     try {
-                                        val uuid = UUID.fromString(message)
-                                        onInvalidate(uuid)
+                                        onInvalidate(UUID.fromString(message.trim()))
                                     } catch (e: IllegalArgumentException) {
                                         logger.warning("Redis'ten geçersiz UUID alındı: $message")
                                     }
                                 }
                             }
                         }
+                        jedisPubSub = pubSub
                         logger.info("Redis sub ($channelName) başlatıldı.")
-                        jedis.subscribe(jedisPubSub, channelName)
+                        jedis.subscribe(pubSub, channelName)
                     }
                 } catch (e: Exception) {
-                    if (!Thread.currentThread().isInterrupted) {
+                    if (running) {
                         logger.warning("Redis sub koptu, 5 saniye sonra yeniden denenecek... (${e.message})")
                         try {
                             Thread.sleep(5000)
                         } catch (ie: InterruptedException) {
-                            Thread.currentThread().interrupt()
+                            break
                         }
                     }
                 }
@@ -86,24 +103,45 @@ class RedisManager(
     }
 
     fun publishUpdate(uuid: UUID) {
+        val executor = publishExecutor ?: return
         if (!config.enabled || jedisPool == null) return
-        
-        thread(start = true, isDaemon = true) {
-            try {
-                jedisPool?.resource?.use { jedis ->
-                    jedis.publish(channelName, uuid.toString())
+
+        try {
+            executor.execute {
+                try {
+                    jedisPool?.resource?.use { jedis ->
+                        jedis.publish(channelName, uuid.toString())
+                    }
+                } catch (e: Exception) {
+                    logger.warning("Redis mesajı gönderilemedi: ${e.message}")
                 }
-            } catch (e: Exception) {
-                logger.warning("Redis mesajı gönderilemedi: ${e.message}")
             }
+        } catch (ignored: RejectedExecutionException) {
         }
     }
 
     fun shutdown() {
+        if (!config.enabled) return
+        running = false
+
+        try {
+            jedisPubSub?.takeIf { it.isSubscribed }?.unsubscribe()
+        } catch (e: Exception) {
+            logger.fine("Redis unsubscribe hatası: ${e.message}")
+        }
         pubSubThread?.interrupt()
-        jedisPubSub?.unsubscribe()
-        
+
+        publishExecutor?.let { executor ->
+            executor.shutdown()
+            try {
+                executor.awaitTermination(2, TimeUnit.SECONDS)
+            } catch (ignored: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+
         jedisPool?.close()
+        jedisPool = null
         logger.info("Redis bağlantıları kapatıldı.")
     }
 }

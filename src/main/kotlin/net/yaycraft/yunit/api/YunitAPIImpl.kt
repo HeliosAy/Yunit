@@ -2,6 +2,7 @@ package net.yaycraft.yunit.api
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
+import net.yaycraft.yunit.config.PluginConfig
 import net.yaycraft.yunit.database.IDatabaseProvider
 import net.yaycraft.yunit.model.PurchaseResult
 import net.yaycraft.yunit.model.TransactionResult
@@ -9,6 +10,7 @@ import net.yaycraft.yunit.model.TransactionType
 import net.yaycraft.yunit.model.YunitAccount
 import net.yaycraft.yunit.service.IEconomyService
 import net.yaycraft.yunit.service.ISafePurchaseService
+import net.yaycraft.yunit.util.format
 import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -18,6 +20,7 @@ class YunitAPIImpl(
     private val economyService: IEconomyService,
     private val purchaseService: ISafePurchaseService,
     private val dbProvider: IDatabaseProvider,
+    private val config: PluginConfig,
     private val scope: CoroutineScope
 ) : YunitAPI {
 
@@ -25,6 +28,10 @@ class YunitAPIImpl(
         return scope.future {
             economyService.getBalance(uuid)
         }
+    }
+
+    override fun getCachedBalance(uuid: UUID): BigDecimal? {
+        return economyService.getCachedBalance(uuid)
     }
 
     override fun hasBalance(uuid: UUID, amount: BigDecimal): CompletableFuture<Boolean> {
@@ -36,7 +43,7 @@ class YunitAPIImpl(
     override fun getAccount(uuid: UUID): CompletableFuture<YunitAccount?> {
         return scope.future {
             try {
-                economyService.getOrCreateAccount(uuid, "-")
+                economyService.findAccount(uuid)
             } catch (e: Exception) {
                 null
             }
@@ -76,4 +83,10 @@ class YunitAPIImpl(
     override fun isDatabaseHealthy(): Boolean {
         return dbProvider.isHealthy()
     }
+
+    override fun getCurrencySymbol(): String = config.currencySymbol
+
+    override fun getCurrencyName(): String = config.currencyName
+
+    override fun formatAmount(amount: BigDecimal): String = amount.format()
 }
