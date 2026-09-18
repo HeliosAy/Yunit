@@ -22,6 +22,7 @@ import net.yaycraft.yunit.command.admin.GiveCommand
 import net.yaycraft.yunit.command.admin.TakeCommand
 import net.yaycraft.yunit.command.admin.SetCommand
 import net.yaycraft.yunit.command.admin.LookupCommand
+import net.yaycraft.yunit.command.admin.ReloadCommand
 import net.yaycraft.yunit.command.player.PlayerCommandManager
 import net.yaycraft.yunit.command.player.BalanceCommand
 import net.yaycraft.yunit.config.ConfigManager
@@ -151,7 +152,8 @@ class Yunit : JavaPlugin() {
             GiveCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
             TakeCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
             SetCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
-            LookupCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope)
+            LookupCommand(economyService, pluginConfig, messageUtil, resolver, pluginScope),
+            ReloadCommand(configManager, langManager, pluginConfig, messageUtil)
         )
         val adminCommandManager = AdminCommandManager(messageUtil, adminSubCommands)
         getCommand("yunitadmin")?.apply {

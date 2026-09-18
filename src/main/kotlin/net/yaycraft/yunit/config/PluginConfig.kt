@@ -6,8 +6,9 @@ data class PluginConfig(
     val cache: CacheConfig,
     val safety: SafetyConfig,
     val serverName: String,
-    val currencySymbol: String,
-    val currencyName: String,
+
+    @Volatile var currencySymbol: String,
+    @Volatile var currencyName: String,
     val debug: Boolean
 )
 

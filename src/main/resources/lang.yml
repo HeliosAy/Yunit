@@ -6,3 +6,6 @@ messages:
   no-permission: "<red>Bunun için yetkiniz yok.</red>"
   player-only: "<red>Bu komutu sadece oyuncular kullanabilir.</red>"
   error-occurred: "<red>Bir hata oluştu: {error}</red>"
+  reloaded: "Mesajlar ve görünüm ayarları yenilendi."
+  reload-failed: "lang.yml okunamadı, önceki mesajlar kullanılıyor. Konsolu kontrol edin."
+  reload-note: "<gray>Veritabanı/Redis ayarları için sunucuyu yeniden başlatın."
