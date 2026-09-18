@@ -4,6 +4,7 @@ import com.google.gson.JsonParseException
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.withLock
@@ -69,11 +70,14 @@ class SafePurchaseServiceImpl(
         //  Para çekildi. Bundan sonrası (teslimat + işaretleme/iade) yarıda kesilmemeli;
         //  plugin kapanırken coroutine iptal edilse bile tamamlanmaya çalışır.
         withContext(NonCancellable) {
-            val delivered = try {
-                deliveryAction.asBoolean
-            } catch (t: Throwable) {
-                logger.log(Level.SEVERE, "Delivery sırasında hata oluştu ($safePlugin): ${t.message}", t)
-                false
+            // Teslimat ana thread'i bekleyebilir; veritabanı thread'lerini meşgul etmesin diye ayrı havuzda çalışır
+            val delivered = withContext(Dispatchers.IO) {
+                try {
+                    deliveryAction.asBoolean
+                } catch (t: Throwable) {
+                    logger.log(Level.SEVERE, "Delivery sırasında hata oluştu ($safePlugin): ${t.message}", t)
+                    false
+                }
             }
 
             if (delivered) {

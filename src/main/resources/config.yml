@@ -44,9 +44,11 @@ safety:
   transaction-cooldown-ms: 500
   # Veritabanı bağlantısı bu aralıkla kontrol edilir; koparsa işlemler geçici olarak durur
   health-check-interval-seconds: 10
-  # Sunucu çökerse yarım kalan (para çekilmiş ama teslim edilmemiş) satın almalar
-  # açılışta otomatik iade edilsin mi? false ise sadece konsola listelenir.
-  recovery-auto-refund: true
+  # Sunucu çökerse yarım kalan satın almalar açılışta otomatik iade edilsin mi?
+  # false (önerilen): sadece konsola listelenir, admin kontrol edip gerekirse elle iade eder.
+  #   Çünkü çökme, ürün teslim edildikten hemen sonra olduysa otomatik iade
+  #   oyuncuya hem ürünü hem parayı vermiş olur.
+  recovery-auto-refund: false
 
 # Debug modu
 debug: false
